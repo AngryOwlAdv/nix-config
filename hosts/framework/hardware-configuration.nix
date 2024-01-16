@@ -16,26 +16,63 @@
  boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  fileSystems."/" =
-    { device = "/dev/disk/by-uuid/8c299e33-5758-41fd-bd97-db55e5731cb4";
-      fsType = "ext4";
+   fileSystems = {
+    "/" = {
+      device = "none";
+      fsType = "tmpfs";
+      # Set mode to 755 instead of 777 or openssh no worky
+      options = ["relatime" "mode=755"];
     };
 
-  fileSystems."/boot" =
-    { device = "/dev/disk/by-uuid/52CA-32FE";
+    "/nix" = {
+      device = "/dev/disk/by-uuid/27fd7c0c-49ec-4686-be77-c20262cfa3e9";
+      fsType = "ext4";
+
+      neededForBoot = true;
+    };
+
+    "/boot" = {
+      device = "/dev/disk/by-uuid/FD68-78E8";
       fsType = "vfat";
     };
-
-  swapDevices = [ ];
+  };
+  swapDevices = [
+    {
+      device = "/dev/nvme0n1p2";
+    }
+  ];
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
   # (the default) this is the recommended approach. When using systemd-networkd it's
   # still possible to use this option, but it's recommended to use it in conjunction
   # with explicit per-interface declarations with `networking.interfaces.<interface>.useDHCP`.
-  networking.useDHCP = lib.mkDefault true;
-  # networking.interfaces.enp2s0.useDHCP = lib.mkDefault true;
-  # networking.interfaces.wlp3s0.useDHCP = lib.mkDefault true;
+  networking = {
+    useDHCP = lib.mkDefault true;
+    hostName = "framework"; # Define your hostname.
+    # TODO: Move spotify port conf to spotify conf
+    firewall.allowedTCPPorts = [57621];
+  };
 
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
-  hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
+  powerManagement.cpuFreqGovernor = lib.mkDefault "powersave";
+  hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
+
+  systemd.services.nix-daemon = {
+    environment = {
+      # Where temp files need to go to avoid filling the whole ram
+      TMPDIR = "/var/cache/nix";
+    };
+
+    serviceConfig = {
+      # Create /var/cache/nix on daemon start
+      CacheDirectory = "nix";
+    };
+  };
+
+  # Force even root to use our custom cache folder
+  environment.variables.NIX_REMOTE = "daemon";
+
+  systemd.extraConfig = ''
+    DefaultTimeoutStopSec=10s
+  '';
 }
